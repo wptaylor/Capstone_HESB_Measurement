@@ -747,8 +747,10 @@ def build_plotly_payload(all_points: Sequence[Dict[str, object]], title: str, st
             "xaxis": {"title": "X (mm)", "range": [-PLOT_RADIUS_MM, PLOT_RADIUS_MM], "backgroundcolor": "#111111", "gridcolor": "#444444", "zerolinecolor": "#555555", "color": "#cccccc"},
             "yaxis": {"title": "Y (mm)", "range": [-PLOT_RADIUS_MM, PLOT_RADIUS_MM], "backgroundcolor": "#111111", "gridcolor": "#444444", "zerolinecolor": "#555555", "color": "#cccccc"},
             "zaxis": {"title": "Z (mm)", "range": [z_min - z_pad, z_max + z_pad], "backgroundcolor": "#111111", "gridcolor": "#444444", "zerolinecolor": "#555555", "color": "#cccccc"},
-            "aspectmode": "manual",
+            "aspectmode": "data",
+            #"asppectmode: "manual","
             "aspectratio": {"x": 1, "y": 1, "z": max(0.35, (z_max - z_min + 2.0 * z_pad) / (2.0 * PLOT_RADIUS_MM))},
+            # "aspectratio": {"x": 1, "y": 1, "z": 1},
             "dragmode": "orbit",
         },
         "uirevision": "keep-camera",
