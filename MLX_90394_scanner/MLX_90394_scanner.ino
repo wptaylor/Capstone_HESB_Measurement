@@ -71,7 +71,7 @@ static const uint8_t MLX_ADDR_B = 0x61;
 static const uint8_t MLX_PER_CHANNEL = 2;
 static const uint8_t SENSOR_COUNT = TCA1_CH_COUNT * TCA2_CH_COUNT * MLX_PER_CHANNEL; // 112
 
-static const uint32_t SNAPSHOT_PERIOD_MS = 2000UL;
+static const uint32_t SNAPSHOT_PERIOD_MS = 500UL;   // was 2000UL
 
 // -----------------------------------------------------------------------------
 // State / low-RAM storage
@@ -657,7 +657,7 @@ static void handle_serial_command(const char *cmd) {
 // Arduino sketch
 // -----------------------------------------------------------------------------
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(250000);
   while (!Serial) {
     delay(10);
   }

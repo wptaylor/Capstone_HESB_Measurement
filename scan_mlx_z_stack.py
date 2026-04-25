@@ -5,9 +5,11 @@ and visualize the field live in a localhost browser viewer.
 
 Real mode:
 - moves the z stage
-- restarts MLX acquisition after each move
-- discards the first snapshot after restart
-- captures the next complete settled snapshot
+- MLX sensors are configured ONCE at firmware boot and free-run in continuous 5 Hz mode;
+  no MLX register writes happen between captures
+- after each move, the script flushes snapshots buffered during stage motion,
+  discards the next snapshot (which may straddle the motion-complete instant),
+  and returns the following fully-settled snapshot
 
 Dummy mode:
 - does not touch the motor
@@ -50,7 +52,7 @@ DEFAULT_OUTPUT_CSV = SCRIPT_DIR / f"mlx_z_stack_{dt.datetime.now():%Y%m%d_%H%M%S
 DEFAULT_PROGRESS_JSON = SCRIPT_DIR / "mlx_z_stack_progress.json"
 WEB_STATE_DIR = SCRIPT_DIR / ".mlx_live_view"
 
-DEFAULT_BAUD = 115200
+DEFAULT_BAUD = 250000
 STEP_SIZE_UM = 1.5
 
 MLX_SOURCE_DEFAULT = "COM7"
@@ -70,7 +72,8 @@ STAGE_SETTLE_AFTER_MOVE_S = 0.25
 MLX_COMMAND_DELAY_S = 0.12
 MLX_POST_COMMAND_READ_S = 0.35
 MLX_CAPTURE_TIMEOUT_S = 15.0
-MLX_SKIP_SNAPSHOTS_AFTER_START = 1
+MLX_POST_MOVE_DRAIN_S = 0.3
+MLX_SKIP_SNAPSHOTS_AFTER_MOVE = 1
 
 PLOT_RADIUS_MM = 35.0
 PLOT_CIRCLE_RADIUS_MM = 17.5
@@ -370,11 +373,12 @@ def capture_nth_snapshot(source: SourceBase, timeout_s: float, skip_snapshots: i
 
 
 def capture_settled_snapshot(source: SourceBase, timeout_s: float, raw_log_path: Optional[pathlib.Path]) -> SnapshotData:
-    start_mlx_stream(source)
-    try:
-        return capture_nth_snapshot(source, timeout_s=timeout_s, skip_snapshots=MLX_SKIP_SNAPSHOTS_AFTER_START, raw_log_path=raw_log_path)
-    finally:
-        stop_mlx_stream(source)
+    # Sensors are configured once at firmware boot and run free in continuous 5 Hz mode,
+    # so there are no MLX register writes here. Flush any snapshots that the firmware
+    # streamed during the stage move, then discard the next in-flight snapshot
+    # (it may straddle the motion-complete instant) and return the one that follows.
+    drain_source_lines(source, MLX_POST_MOVE_DRAIN_S)
+    return capture_nth_snapshot(source, timeout_s=timeout_s, skip_snapshots=MLX_SKIP_SNAPSHOTS_AFTER_MOVE, raw_log_path=raw_log_path)
 
 
 def load_stage_state(path: pathlib.Path) -> StageStateSimple:
@@ -873,7 +877,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--step-mm", type=float, default=Z_STEP_MM_DEFAULT, help=f"Step size in mm (default: {Z_STEP_MM_DEFAULT})")
     p.add_argument("--mapping", type=pathlib.Path, default=DEFAULT_MAPPING_XLSX, help="Path to sensor mapping workbook")
     p.add_argument("--state-file", type=pathlib.Path, default=DEFAULT_STATE_PATH, help="Stage state JSON path")
-    p.add_argument("--output", type=pathlib.Path, default=DEFAULT_OUTPUT_CSV, help="Wide output CSV path")
+    p.add_argument("--output", type=pathlib.Path, default=None, help="Full output CSV path (takes precedence over --name/--subfolder)")
+    p.add_argument("--name", default=None, help="Output filename stem; '.csv' appended if missing (default: mlx_z_stack_<timestamp>)")
+    p.add_argument("--subfolder", type=pathlib.Path, default=None, help="Subfolder (relative to script dir, or absolute) for the output CSV; created if missing")
     p.add_argument("--progress-json", type=pathlib.Path, default=DEFAULT_PROGRESS_JSON, help="Progress JSON path")
     p.add_argument("--raw-log-dir", type=pathlib.Path, default=None, help="Optional per-snapshot raw text log directory")
     p.add_argument("--single-measurement", action="store_true", help="Capture exactly one plane and plot it immediately")
@@ -881,6 +887,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--plot-backend", choices=("web", "none"), default="web", help="Plot backend (default: web)")
     p.add_argument("--web-port", type=int, default=WEB_PORT_DEFAULT, help=f"Localhost viewer port (default: {WEB_PORT_DEFAULT})")
     p.add_argument("--web-no-open", action="store_true", help="Do not auto-open the browser viewer")
+    p.add_argument("-z", "--return-to-zero", action="store_true",
+                   help="After completing all measurements, return the stage to z=0 before exiting (real-stage mode only)")
     return p.parse_args()
 
 
@@ -900,7 +908,6 @@ def run_single_measurement_real(args, mapping, output_csv, plotter, mlx_source_n
     mlx = None
     try:
         mlx = open_source(mlx_source_name, args.baud, MLX_SERIAL_SETTLE_S)
-        stop_mlx_stream(mlx)
         snapshot = capture_settled_snapshot(mlx, timeout_s=MLX_CAPTURE_TIMEOUT_S, raw_log_path=None)
         capture_ts = dt.datetime.now().astimezone()
         wide_row = build_wide_row(mapping, snapshot, capture_ts, z_index=0, z_steps=z_steps, z_um=z_um, z_mm=z_mm)
@@ -913,10 +920,6 @@ def run_single_measurement_real(args, mapping, output_csv, plotter, mlx_source_n
         return 0
     finally:
         if mlx is not None:
-            try:
-                stop_mlx_stream(mlx)
-            except Exception:
-                pass
             try:
                 mlx.close()
             except Exception:
@@ -932,7 +935,6 @@ def run_single_measurement_dummy(args, mapping, output_csv, plotter, mlx_source_
     try:
         mlx = open_source(mlx_source_name, args.baud, MLX_SERIAL_SETTLE_S)
         set_dummy_z(mlx, z_mm)
-        stop_mlx_stream(mlx)
         snapshot = capture_settled_snapshot(mlx, timeout_s=MLX_CAPTURE_TIMEOUT_S, raw_log_path=None)
         capture_ts = dt.datetime.now().astimezone()
         wide_row = build_wide_row(mapping, snapshot, capture_ts, z_index=0, z_steps=z_steps, z_um=z_um, z_mm=z_mm)
@@ -946,10 +948,6 @@ def run_single_measurement_dummy(args, mapping, output_csv, plotter, mlx_source_
     finally:
         if mlx is not None:
             try:
-                stop_mlx_stream(mlx)
-            except Exception:
-                pass
-            try:
                 mlx.close()
             except Exception:
                 pass
@@ -960,7 +958,16 @@ def main() -> int:
     mlx_source_name = resolve_mlx_source(args)
     mapping_path = args.mapping.resolve()
     state_path = args.state_file.resolve()
-    output_csv = args.output.resolve()
+
+    if args.output is not None:
+        output_csv = args.output.resolve()
+    else:
+        base_dir = SCRIPT_DIR if args.subfolder is None else (SCRIPT_DIR / args.subfolder)
+        stem = args.name if args.name is not None else f"mlx_z_stack_{dt.datetime.now():%Y%m%d_%H%M%S}"
+        name = stem if stem.endswith(".csv") else f"{stem}.csv"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        output_csv = (base_dir / name).resolve()
+
     progress_json = args.progress_json.resolve()
     raw_log_dir = args.raw_log_dir.resolve() if args.raw_log_dir else None
 
@@ -1001,20 +1008,18 @@ def main() -> int:
             f"Z plan: {len(z_targets_steps)} positions from {args.start_mm:.3f} mm "
             f"to {args.stop_mm:.3f} mm in {args.step_mm:.3f} mm increments"
         )
-        print(f"Discarding {MLX_SKIP_SNAPSHOTS_AFTER_START} snapshot(s) after each MLX restart")
+        print(f"Discarding {MLX_SKIP_SNAPSHOTS_AFTER_MOVE} snapshot(s) after each stage move (to skip motion-contaminated data)")
 
         mlx = None
         stage_ser = None
         try:
             mlx = open_source(mlx_source_name, args.baud, MLX_SERIAL_SETTLE_S)
             if args.dummy_data:
-                stop_mlx_stream(mlx)
                 stage_api = None
             else:
                 stage_api = load_stage_api()
                 stage_ser = stage_api["open_stage_serial_port"](args.stage_port, args.baud, STAGE_SERIAL_SETTLE_S)
                 _ = stage_api["drain_stage_serial"](stage_ser, STAGE_STARTUP_READ_S)
-                stop_mlx_stream(mlx)
 
             total_positions = len(z_targets_steps)
             for z_index, target_steps in enumerate(z_targets_steps):
@@ -1073,6 +1078,18 @@ def main() -> int:
                 )
 
             print(f"Completed z-stack. Output written to: {output_csv}")
+
+            if args.return_to_zero:
+                if args.dummy_data:
+                    print("Skipping return-to-zero: dummy mode has no real stage")
+                elif stage_ser is not None:
+                    print("Returning stage to z=0...")
+                    delta_steps, move_duration_s = move_stage_absolute(stage_ser, state_path, 0, timeout_s=STAGE_MOVE_TIMEOUT_S)
+                    if delta_steps != 0:
+                        print(f"Homed: stage moved {delta_steps:+d} steps to z=0 in {move_duration_s:.3f} s")
+                    else:
+                        print("Stage already at z=0; no homing move required")
+
             if args.plot_backend == "web":
                 final_html = output_csv.with_suffix(".html")
                 plotter.write_final_html(final_html)
@@ -1080,10 +1097,6 @@ def main() -> int:
             return 0
         finally:
             if mlx is not None:
-                try:
-                    stop_mlx_stream(mlx)
-                except Exception:
-                    pass
                 try:
                     mlx.close()
                 except Exception:
