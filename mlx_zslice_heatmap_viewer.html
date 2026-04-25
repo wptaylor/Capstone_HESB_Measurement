@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MLX Field Z-Slice Heatmap Viewer</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --panel: #12141b;
+      --panel-2: #181b24;
+      --text: #e8eaf0;
+      --muted: #9aa3b2;
+      --line: #2b3040;
+      --accent: #7aa2ff;
+      --bad: #ff6b6b;
+      --good: #5ed1a4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+    }
+    header {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+      background: #0e1016;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    h1 {
+      margin: 0 0 5px;
+      font-size: 20px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+    aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      align-self: start;
+      position: sticky;
+      top: 84px;
+      max-height: calc(100vh - 100px);
+      overflow-y: auto;
+    }
+    main {
+      min-width: 0;
+    }
+    .section {
+      padding-bottom: 14px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+    label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin: 10px 0 5px;
+    }
+    select, input[type="number"], input[type="range"], input[type="text"], button {
+      width: 100%;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 9px;
+      font-size: 13px;
+      outline: none;
+    }
+    input[type="file"] {
+      width: 100%;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    button {
+      cursor: pointer;
+      background: #1d2435;
+      border-color: #33405f;
+    }
+    button:hover { border-color: var(--accent); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    .toggle-row input { width: auto; }
+    .datasets {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .dataset-pill {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 10px;
+      padding: 8px 9px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .dataset-pill strong {
+      color: var(--text);
+      display: block;
+      font-size: 13px;
+      margin-bottom: 2px;
+      word-break: break-word;
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 10px;
+      padding: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .stat b {
+      color: var(--text);
+      display: block;
+      font-size: 14px;
+      margin-top: 2px;
+    }
+    #plotGrid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    .plot-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      min-height: 520px;
+    }
+    .plot-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      padding: 2px 4px 8px;
+      font-size: 12px;
+    }
+    .plot-title strong {
+      color: var(--text);
+      font-size: 14px;
+    }
+    .plot {
+      height: 500px;
+      width: 100%;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .warn {
+      color: #ffd166;
+    }
+    .error {
+      color: var(--bad);
+    }
+    .ok {
+      color: var(--good);
+    }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { position: static; max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MLX Field Z-Slice Heatmap Viewer</h1>
+    <div class="subtitle">Upload z-stack CSVs from the HESB measurement scanner. View XY field slices, side-by-side comparisons, and residual maps at matched z planes.</div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="section">
+        <label>CSV files</label>
+        <input id="fileInput" type="file" accept=".csv,text/csv" multiple />
+        <div class="note" style="margin-top: 8px;">Expected format: one row per z plane, with repeated sensor columns such as <code>s001_x_mm</code>, <code>s001_y_mm</code>, <code>s001_x_uT</code>, <code>s001_y_uT</code>, <code>s001_z_uT</code>.</div>
+        <div id="datasetList" class="datasets"></div>
+      </div>
+
+      <div class="section">
+        <label>View mode</label>
+        <select id="viewMode">
+          <option value="single">Single heatmap</option>
+          <option value="side">Side-by-side heatmaps</option>
+          <option value="residual">Residual A − B</option>
+          <option value="percent">Percent residual 100·(A − B)/B</option>
+        </select>
+
+        <label>Dataset A</label>
+        <select id="datasetA"></select>
+        <label>Dataset B</label>
+        <select id="datasetB"></select>
+
+        <label>Component</label>
+        <select id="component">
+          <option value="mag">|B|</option>
+          <option value="bx">Bx</option>
+          <option value="by">By</option>
+          <option value="bz">Bz</option>
+          <option value="br">Br radial</option>
+          <option value="bt">Bθ azimuthal</option>
+        </select>
+      </div>
+
+      <div class="section">
+        <label>Z plane: <span id="zLabel">—</span></label>
+        <input id="zSlider" type="range" min="0" max="0" value="0" step="1" />
+        <div class="row">
+          <div>
+            <label>Grid resolution</label>
+            <input id="gridN" type="number" min="30" max="220" value="90" step="10" />
+          </div>
+          <div>
+            <label>IDW power</label>
+            <input id="idwPower" type="number" min="1" max="6" value="2.2" step="0.1" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>IDW neighbors</label>
+            <input id="neighbors" type="number" min="3" max="64" value="16" step="1" />
+          </div>
+          <div>
+            <label>Blank radius, mm</label>
+            <input id="blankRadius" type="number" min="0" max="200" value="25" step="1" />
+          </div>
+        </div>
+        <div class="toggle-row"><input id="overlayPoints" type="checkbox" checked /> <span>Overlay raw sensor points</span></div>
+        <div class="toggle-row"><input id="sameScale" type="checkbox" checked /> <span>Use common color scale in side-by-side</span></div>
+        <div class="toggle-row"><input id="showVectors" type="checkbox" /> <span>Overlay in-plane B vectors</span></div>
+        <button id="renderBtn" style="margin-top: 12px;">Render</button>
+      </div>
+
+      <div class="section">
+        <div class="stat-grid" id="stats"></div>
+      </div>
+
+      <div class="section note">
+        <b>Interpretation bias:</b> use heatmaps for structure, raw dots for measurement support, and residual maps for true run-to-run differences. Interpolation invents no new data; it only makes spatial gradients legible.
+      </div>
+    </aside>
+
+    <main>
+      <div id="plotGrid">
+        <div class="plot-card">
+          <div class="plot-title"><strong>Waiting for CSV upload</strong><span></span></div>
+          <div id="plot0" class="plot"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+const datasets = [];
+let activeZs = [];
+
+const els = {
+  fileInput: document.getElementById('fileInput'),
+  datasetList: document.getElementById('datasetList'),
+  datasetA: document.getElementById('datasetA'),
+  datasetB: document.getElementById('datasetB'),
+  viewMode: document.getElementById('viewMode'),
+  component: document.getElementById('component'),
+  zSlider: document.getElementById('zSlider'),
+  zLabel: document.getElementById('zLabel'),
+  gridN: document.getElementById('gridN'),
+  idwPower: document.getElementById('idwPower'),
+  neighbors: document.getElementById('neighbors'),
+  blankRadius: document.getElementById('blankRadius'),
+  overlayPoints: document.getElementById('overlayPoints'),
+  sameScale: document.getElementById('sameScale'),
+  showVectors: document.getElementById('showVectors'),
+  renderBtn: document.getElementById('renderBtn'),
+  plotGrid: document.getElementById('plotGrid'),
+  stats: document.getElementById('stats')
+};
+
+function sensorIdsFromColumns(cols) {
+  const ids = new Set();
+  for (const c of cols) {
+    const m = /^s(\d{3})_/.exec(c);
+    if (m) ids.add(m[1]);
+  }
+  return [...ids].sort((a,b) => Number(a)-Number(b));
+}
+
+function numberOrNaN(v) {
+  if (v === null || v === undefined || v === '') return NaN;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function componentValue(p, component) {
+  if (component === 'bx') return p.bx;
+  if (component === 'by') return p.by;
+  if (component === 'bz') return p.bz;
+  if (component === 'mag') return Math.sqrt(p.bx*p.bx + p.by*p.by + p.bz*p.bz);
+  const theta = Math.atan2(p.y, p.x);
+  if (component === 'br') return p.bx*Math.cos(theta) + p.by*Math.sin(theta);
+  if (component === 'bt') return -p.bx*Math.sin(theta) + p.by*Math.cos(theta);
+  return NaN;
+}
+
+function parseWideCsv(name, rows, fields) {
+  const sensorIds = sensorIdsFromColumns(fields);
+  const slices = [];
+  for (const row of rows) {
+    const z = numberOrNaN(row.z_mm);
+    const zIndex = numberOrNaN(row.z_index);
+    const points = [];
+    for (const id of sensorIds) {
+      const x = numberOrNaN(row[`s${id}_x_mm`]);
+      const y = numberOrNaN(row[`s${id}_y_mm`]);
+      const bx = numberOrNaN(row[`s${id}_x_uT`]);
+      const by = numberOrNaN(row[`s${id}_y_uT`]);
+      const bz = numberOrNaN(row[`s${id}_z_uT`]);
+      const measured = String(row[`s${id}_measurement_available`] ?? '').toLowerCase();
+      if ([x,y,bx,by,bz].every(Number.isFinite) && measured !== 'false' && measured !== '0') {
+        points.push({
+          id: Number(id),
+          x, y, bx, by, bz,
+          r: numberOrNaN(row[`s${id}_r_mm`]),
+          angle: numberOrNaN(row[`s${id}_angle_deg`]),
+          ring: row[`s${id}_ring`] ?? ''
+        });
+      }
+    }
+    if (Number.isFinite(z) && points.length) {
+      slices.push({z, zIndex, points});
+    }
+  }
+  slices.sort((a,b) => a.z - b.z);
+  const allPoints = slices.flatMap(s => s.points);
+  const xs = allPoints.map(p => p.x), ys = allPoints.map(p => p.y);
+  return {
+    name,
+    slices,
+    zValues: slices.map(s => s.z),
+    sensorIds,
+    bounds: {
+      xmin: Math.min(...xs), xmax: Math.max(...xs),
+      ymin: Math.min(...ys), ymax: Math.max(...ys)
+    }
+  };
+}
+
+function refreshDatasetControls() {
+  els.datasetList.innerHTML = datasets.map((d, i) => `
+    <div class="dataset-pill">
+      <strong>${i}: ${escapeHtml(d.name)}</strong>
+      ${d.slices.length} z planes · ${d.sensorIds.length} possible sensors · ${d.slices[0]?.points.length ?? 0} valid points/slice
+    </div>
+  `).join('');
+
+  for (const sel of [els.datasetA, els.datasetB]) {
+    const prior = sel.value;
+    sel.innerHTML = datasets.map((d, i) => `<option value="${i}">${escapeHtml(d.name)}</option>`).join('');
+    if (prior && Number(prior) < datasets.length) sel.value = prior;
+  }
+  if (datasets.length > 1) els.datasetB.value = "1";
+
+  updateActiveZs();
+}
+
+function updateActiveZs() {
+  if (!datasets.length) {
+    activeZs = [];
+    els.zSlider.max = 0;
+    els.zSlider.value = 0;
+    els.zLabel.textContent = '—';
+    return;
+  }
+  const d = datasets[Number(els.datasetA.value) || 0];
+  activeZs = d.zValues;
+  els.zSlider.max = Math.max(0, activeZs.length - 1);
+  els.zSlider.value = Math.min(Number(els.zSlider.value), activeZs.length - 1);
+  updateZLabel();
+}
+
+function updateZLabel() {
+  const z = activeZs[Number(els.zSlider.value)];
+  els.zLabel.textContent = Number.isFinite(z) ? `${z.toFixed(3)} mm` : '—';
+}
+
+function nearestSlice(dataset, z) {
+  let best = null, bestDz = Infinity;
+  for (const s of dataset.slices) {
+    const dz = Math.abs(s.z - z);
+    if (dz < bestDz) { bestDz = dz; best = s; }
+  }
+  return best;
+}
+
+function residualPoints(sliceA, sliceB, component, percent=false) {
+  const mapB = new Map(sliceB.points.map(p => [p.id, p]));
+  const out = [];
+  for (const a of sliceA.points) {
+    const b = mapB.get(a.id);
+    if (!b) continue;
+    const va = componentValue(a, component);
+    const vb = componentValue(b, component);
+    if (!Number.isFinite(va) || !Number.isFinite(vb)) continue;
+    let value = va - vb;
+    if (percent) value = Math.abs(vb) > 1e-12 ? 100 * value / vb : NaN;
+    if (!Number.isFinite(value)) continue;
+    out.push({...a, value});
+  }
+  return out;
+}
+
+function pointsWithValue(slice, component) {
+  return slice.points.map(p => ({...p, value: componentValue(p, component)})).filter(p => Number.isFinite(p.value));
+}
+
+function paddedBounds(bounds, padFrac=0.08) {
+  const w = bounds.xmax - bounds.xmin || 1;
+  const h = bounds.ymax - bounds.ymin || 1;
+  return {
+    xmin: bounds.xmin - padFrac*w, xmax: bounds.xmax + padFrac*w,
+    ymin: bounds.ymin - padFrac*h, ymax: bounds.ymax + padFrac*h
+  };
+}
+
+function combinedBounds(list) {
+  const xs = [], ys = [];
+  for (const pts of list) for (const p of pts) { xs.push(p.x); ys.push(p.y); }
+  return paddedBounds({xmin: Math.min(...xs), xmax: Math.max(...xs), ymin: Math.min(...ys), ymax: Math.max(...ys)});
+}
+
+function idwGrid(points, bounds, n, power, k, blankRadius) {
+  const xs = linspace(bounds.xmin, bounds.xmax, n);
+  const ys = linspace(bounds.ymin, bounds.ymax, n);
+  const z = [];
+  const blank2 = blankRadius > 0 ? blankRadius*blankRadius : Infinity;
+
+  for (let iy = 0; iy < ys.length; iy++) {
+    const row = [];
+    for (let ix = 0; ix < xs.length; ix++) {
+      const gx = xs[ix], gy = ys[iy];
+      const ds = [];
+      for (const p of points) {
+        const dx = gx - p.x, dy = gy - p.y;
+        const d2 = dx*dx + dy*dy;
+        ds.push([d2, p.value]);
+      }
+      ds.sort((a,b) => a[0] - b[0]);
+      if (ds.length === 0 || ds[0][0] > blank2) {
+        row.push(null);
+        continue;
+      }
+      if (ds[0][0] < 1e-12) {
+        row.push(ds[0][1]);
+        continue;
+      }
+      let num = 0, den = 0;
+      const kk = Math.min(k, ds.length);
+      for (let i=0; i<kk; i++) {
+        const w = 1 / Math.pow(Math.sqrt(ds[i][0]), power);
+        num += w * ds[i][1];
+        den += w;
+      }
+      row.push(num / den);
+    }
+    z.push(row);
+  }
+  return {x: xs, y: ys, z};
+}
+
+function linspace(a,b,n) {
+  if (n <= 1) return [a];
+  const arr = [];
+  for (let i=0;i<n;i++) arr.push(a + (b-a)*i/(n-1));
+  return arr;
+}
+
+function dataRange(points) {
+  const vals = points.map(p => p.value).filter(Number.isFinite);
+  if (!vals.length) return {min: NaN, max: NaN, mean: NaN, rms: NaN};
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+  const rms = Math.sqrt(vals.reduce((a,b)=>a+b*b,0)/vals.length);
+  return {min, max, mean, rms};
+}
+
+function rangeForDatasetComponent(dataset, component) {
+  const vals = [];
+  for (const slice of dataset.slices) {
+    for (const p of slice.points) {
+      const v = componentValue(p, component);
+      if (Number.isFinite(v)) vals.push(v);
+    }
+  }
+  if (!vals.length) return {min: undefined, max: undefined};
+  return {min: Math.min(...vals), max: Math.max(...vals)};
+}
+
+function combinedRange(...ranges) {
+  const mins = ranges.map(r => r?.min).filter(Number.isFinite);
+  const maxs = ranges.map(r => r?.max).filter(Number.isFinite);
+  if (!mins.length || !maxs.length) return {min: undefined, max: undefined};
+  return {min: Math.min(...mins), max: Math.max(...maxs)};
+}
+
+function symmetricResidualRange(datasetA, datasetB, component, percent=false) {
+  let maxAbs = 0;
+  for (const sliceA of datasetA.slices) {
+    const sliceB = nearestSlice(datasetB, sliceA.z);
+    if (!sliceB) continue;
+    const pts = residualPoints(sliceA, sliceB, component, percent);
+    for (const p of pts) {
+      const av = Math.abs(p.value);
+      if (Number.isFinite(av) && av > maxAbs) maxAbs = av;
+    }
+  }
+  maxAbs = maxAbs || 1e-9;
+  return {min: -maxAbs, max: maxAbs};
+}
+
+function makePlotCard(id, title, meta) {
+  return `
+    <div class="plot-card">
+      <div class="plot-title"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(meta)}</span></div>
+      <div id="${id}" class="plot"></div>
+    </div>
+  `;
+}
+
+function renderHeatmap(plotId, title, points, options={}) {
+  const n = clamp(Number(els.gridN.value) || 90, 30, 220);
+  const power = clamp(Number(els.idwPower.value) || 2.2, 1, 6);
+  const k = clamp(Number(els.neighbors.value) || 16, 3, 64);
+  const blankRadius = Math.max(0, Number(els.blankRadius.value) || 0);
+  const bounds = options.bounds ?? combinedBounds([points]);
+  const grid = idwGrid(points, bounds, n, power, k, blankRadius);
+  const range = dataRange(points);
+
+  const traces = [{
+    type: 'heatmap',
+    x: grid.x,
+    y: grid.y,
+    z: grid.z,
+    colorscale: options.diverging ? 'RdBu' : 'Viridis',
+    reversescale: !!options.diverging,
+    zmid: options.diverging ? 0 : undefined,
+    zmin: options.zmin,
+    zmax: options.zmax,
+    colorbar: {title: options.unit || 'µT'},
+    hovertemplate: 'x=%{x:.2f} mm<br>y=%{y:.2f} mm<br>value=%{z:.3f}<extra></extra>'
+  }];
+
+  if (els.overlayPoints.checked) {
+    traces.push({
+      type: 'scatter',
+      mode: 'markers',
+      x: points.map(p => p.x),
+      y: points.map(p => p.y),
+      marker: {
+        size: 6,
+        color: points.map(p => p.value),
+        colorscale: options.diverging ? 'RdBu' : 'Viridis',
+        reversescale: !!options.diverging,
+        zmid: options.diverging ? 0 : undefined,
+        cmin: options.zmin,
+        cmax: options.zmax,
+        line: {color: '#ffffff', width: 0.7},
+        showscale: false
+      },
+      text: points.map(p => `s${String(p.id).padStart(3,'0')}`),
+      hovertemplate: '%{text}<br>x=%{x:.2f} mm<br>y=%{y:.2f} mm<br>raw=%{marker.color:.3f}<extra></extra>'
+    });
+  }
+
+  if (els.showVectors.checked && !options.noVectors) {
+    traces.push(...vectorTraces(points));
+  }
+
+  Plotly.newPlot(plotId, traces, {
+    paper_bgcolor: '#12141b',
+    plot_bgcolor: '#0b0c10',
+    font: {color: '#e8eaf0'},
+    margin: {l: 55, r: 20, t: 20, b: 50},
+    xaxis: {title: 'x [mm]', scaleanchor: 'y', scaleratio: 1, gridcolor: '#242938', zerolinecolor: '#3b4256'},
+    yaxis: {title: 'y [mm]', gridcolor: '#242938', zerolinecolor: '#3b4256'},
+    title: {text: '', font: {size: 13}},
+    annotations: [{
+      text: `${points.length} pts · min ${fmt(range.min)} · mean ${fmt(range.mean)} · max ${fmt(range.max)} · rms ${fmt(range.rms)}`,
+      xref: 'paper', yref: 'paper', x: 0, y: 1.04, showarrow: false,
+      font: {size: 11, color: '#9aa3b2'}, xanchor: 'left'
+    }]
+  }, {responsive: true, displaylogo: false});
+}
+
+function vectorTraces(points) {
+  const vals = points.map(p => Math.hypot(p.bx, p.by)).filter(v => Number.isFinite(v) && v > 0);
+  const med = vals.sort((a,b)=>a-b)[Math.floor(vals.length/2)] || 1;
+  const scale = 4 / med;
+  const traces = [];
+  const step = Math.max(1, Math.floor(points.length / 80));
+  for (let i=0; i<points.length; i += step) {
+    const p = points[i];
+    const x2 = p.x + p.bx*scale;
+    const y2 = p.y + p.by*scale;
+    traces.push({
+      type: 'scatter',
+      mode: 'lines',
+      x: [p.x, x2],
+      y: [p.y, y2],
+      line: {color: '#ffffff', width: 1},
+      hoverinfo: 'skip',
+      showlegend: false
+    });
+  }
+  return traces;
+}
+
+function render() {
+  if (!datasets.length) {
+    els.plotGrid.innerHTML = makePlotCard('plot0', 'Waiting for CSV upload', '');
+    Plotly.newPlot('plot0', [], {
+      paper_bgcolor: '#12141b',
+      plot_bgcolor: '#0b0c10',
+      font: {color: '#e8eaf0'},
+      annotations: [{text: 'Upload one or more CSV z-stacks.', showarrow: false, x: 0.5, y: 0.5, xref: 'paper', yref: 'paper'}]
+    }, {displaylogo: false});
+    return;
+  }
+
+  const mode = els.viewMode.value;
+  const comp = els.component.value;
+  const z = activeZs[Number(els.zSlider.value)];
+  const A = datasets[Number(els.datasetA.value)];
+  const B = datasets[Number(els.datasetB.value)];
+  const sA = nearestSlice(A, z);
+  const sB = B ? nearestSlice(B, z) : null;
+
+  if (!sA) return;
+
+  let cards = [];
+  if (mode === 'single' || !sB) {
+    cards = [{id:'plot0', title: `${A.name}: ${componentLabel(comp)}`, meta: `z=${sA.z.toFixed(3)} mm`}];
+    els.plotGrid.style.gridTemplateColumns = '1fr';
+    els.plotGrid.innerHTML = cards.map(c => makePlotCard(c.id, c.title, c.meta)).join('');
+    const pts = pointsWithValue(sA, comp);
+    const globalRange = rangeForDatasetComponent(A, comp);
+    renderHeatmap('plot0', cards[0].title, pts, {zmin: globalRange.min, zmax: globalRange.max, unit: unitForMode(mode)});
+    renderStats([{name: A.name, pts}]);
+    return;
+  }
+
+  if (mode === 'side') {
+    els.plotGrid.style.gridTemplateColumns = window.innerWidth > 1180 ? '1fr 1fr' : '1fr';
+    els.plotGrid.innerHTML =
+      makePlotCard('plot0', `${A.name}: ${componentLabel(comp)}`, `z=${sA.z.toFixed(3)} mm`) +
+      makePlotCard('plot1', `${B.name}: ${componentLabel(comp)}`, `z=${sB.z.toFixed(3)} mm`);
+
+    const ptsA = pointsWithValue(sA, comp), ptsB = pointsWithValue(sB, comp);
+    const bounds = combinedBounds([ptsA, ptsB]);
+    const rangeA = rangeForDatasetComponent(A, comp);
+    const rangeB = rangeForDatasetComponent(B, comp);
+    const common = combinedRange(rangeA, rangeB);
+    const scaleA = els.sameScale.checked ? common : rangeA;
+    const scaleB = els.sameScale.checked ? common : rangeB;
+    renderHeatmap('plot0', A.name, ptsA, {bounds, zmin: scaleA.min, zmax: scaleA.max, unit: 'µT'});
+    renderHeatmap('plot1', B.name, ptsB, {bounds, zmin: scaleB.min, zmax: scaleB.max, unit: 'µT'});
+    renderStats([{name: A.name, pts: ptsA}, {name: B.name, pts: ptsB}]);
+    return;
+  }
+
+  const percent = mode === 'percent';
+  const ptsR = residualPoints(sA, sB, comp, percent);
+  els.plotGrid.style.gridTemplateColumns = '1fr';
+  els.plotGrid.innerHTML = makePlotCard('plot0', `${A.name} − ${B.name}: ${componentLabel(comp)}`, `z=${sA.z.toFixed(3)} mm vs ${sB.z.toFixed(3)} mm`);
+  const residualRange = symmetricResidualRange(A, B, comp, percent);
+  renderHeatmap('plot0', 'Residual', ptsR, {
+    diverging: true,
+    zmin: residualRange.min,
+    zmax: residualRange.max,
+    unit: percent ? '%' : 'µT',
+    noVectors: true
+  });
+  renderStats([{name: `${A.name} − ${B.name}`, pts: ptsR}]);
+}
+
+function renderStats(items) {
+  els.stats.innerHTML = items.map(item => {
+    const r = dataRange(item.pts);
+    return `
+      <div class="stat"><span>${escapeHtml(item.name)} min</span><b>${fmt(r.min)}</b></div>
+      <div class="stat"><span>${escapeHtml(item.name)} max</span><b>${fmt(r.max)}</b></div>
+      <div class="stat"><span>${escapeHtml(item.name)} mean</span><b>${fmt(r.mean)}</b></div>
+      <div class="stat"><span>${escapeHtml(item.name)} rms</span><b>${fmt(r.rms)}</b></div>
+    `;
+  }).join('');
+}
+
+function componentLabel(c) {
+  return {mag:'|B|', bx:'Bx', by:'By', bz:'Bz', br:'Br', bt:'Bθ'}[c] || c;
+}
+
+function unitForMode(mode) {
+  return mode === 'percent' ? '%' : 'µT';
+}
+
+function fmt(v) {
+  return Number.isFinite(v) ? v.toFixed(3) : '—';
+}
+
+function clamp(v,a,b) { return Math.max(a, Math.min(b, v)); }
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+}
+
+els.fileInput.addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  for (const file of files) {
+    const text = await file.text();
+    const parsed = Papa.parse(text, {
+      header: true,
+      dynamicTyping: false,
+      skipEmptyLines: true
+    });
+    if (parsed.errors.length) {
+      console.warn(`Parse warnings for ${file.name}`, parsed.errors.slice(0, 5));
+    }
+    const ds = parseWideCsv(file.name, parsed.data, parsed.meta.fields || []);
+    if (!ds.slices.length) {
+      alert(`No valid z-slices found in ${file.name}`);
+      continue;
+    }
+    datasets.push(ds);
+  }
+  refreshDatasetControls();
+  render();
+});
+
+for (const el of [els.datasetA, els.datasetB]) el.addEventListener('change', () => { updateActiveZs(); render(); });
+for (const el of [els.viewMode, els.component, els.overlayPoints, els.sameScale, els.showVectors]) el.addEventListener('change', render);
+els.zSlider.addEventListener('input', () => { updateZLabel(); render(); });
+els.renderBtn.addEventListener('click', render);
+
+render();
+</script>
+</body>
+</html>
