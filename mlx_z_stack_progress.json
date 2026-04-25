@@ -1,16 +1,16 @@
 {
-  "completed_positions": 12,
+  "completed_positions": 14,
   "dummy_data": false,
-  "last_capture_pc_local_time": "2026-04-25T00:17:42-04:00",
-  "last_snapshot_arduino_ms": 60903,
-  "last_z_index": 11,
-  "last_z_mm": 8.25,
-  "last_z_steps": 5500,
-  "last_z_um": 8250.0,
+  "last_capture_pc_local_time": "2026-04-25T03:09:01-04:00",
+  "last_snapshot_arduino_ms": 42433,
+  "last_z_index": 13,
+  "last_z_mm": 9.75,
+  "last_z_steps": 6500,
+  "last_z_um": 9750.0,
   "mapping_xlsx": "C:\\Users\\willt\\Documents\\Capstone\\Measurement Code\\SensorGrid_112_Positions (1).xlsx",
   "mlx_source": "COM11",
-  "output_csv": "C:\\Users\\willt\\Documents\\Capstone\\Measurement Code\\TESTING_2026_APR_24\\5A_0d_TP_test2.csv",
+  "output_csv": "C:\\Users\\willt\\Documents\\Capstone\\Measurement Code\\TESTING_2026_APR_24\\5A_60d_SP.csv",
   "stage_port": "COM10",
   "state_file": "C:\\Users\\willt\\Documents\\Capstone\\Measurement Code\\z_stage_state.json",
-  "total_positions": 41
+  "total_positions": 27
 }

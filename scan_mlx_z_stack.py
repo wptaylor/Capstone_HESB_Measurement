@@ -73,7 +73,7 @@ MLX_COMMAND_DELAY_S = 0.12
 MLX_POST_COMMAND_READ_S = 0.35
 MLX_CAPTURE_TIMEOUT_S = 15.0
 MLX_POST_MOVE_DRAIN_S = 0.3
-MLX_SKIP_SNAPSHOTS_AFTER_MOVE = 1
+MLX_SKIP_SNAPSHOTS_AFTER_MOVE = 2
 
 PLOT_RADIUS_MM = 35.0
 PLOT_CIRCLE_RADIUS_MM = 17.5
@@ -233,7 +233,25 @@ def atomic_write_text(path: pathlib.Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    # On Windows, OneDrive sync, Search Indexer, Defender real-time scanning,
+    # and the live-viewer HTTP server thread can all briefly hold a handle on
+    # the destination, causing PermissionError ([WinError 5] "Access is denied")
+    # on rename. Retry with short backoff; total worst-case wait ~0.87 s.
+    last_err: Optional[OSError] = None
+    for delay in (0.0, 0.02, 0.05, 0.1, 0.2, 0.5):
+        if delay:
+            time.sleep(delay)
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError as exc:
+            last_err = exc
+    try:
+        tmp.unlink()
+    except Exception:
+        pass
+    assert last_err is not None
+    raise last_err
 
 
 def write_json(path: pathlib.Path, payload: dict) -> None:

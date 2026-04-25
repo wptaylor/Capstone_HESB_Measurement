@@ -663,7 +663,7 @@ void setup() {
   }
 
   Wire.begin();
-  Wire.setClock(100000);
+  Wire.setClock(400000);
   delay(20);
 
   if (!configure_all_sensors()) {
