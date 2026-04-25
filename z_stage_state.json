@@ -1,9 +1,9 @@
 {
-  "current_mm": 0,
-  "current_steps": 0,
-  "current_um": 0,
+  "current_mm": 30.0,
+  "current_steps": 20000,
+  "current_um": 30000.0,
   "note": "scan_mlx_z_stack moved by 1000 steps",
   "stage_direction_sign": 1,
   "step_size_um": 1.5,
-  "updated_at": "2026-04-24T20:42:27+00:00"
+  "updated_at": "2026-04-25T02:38:41+00:00"
 }

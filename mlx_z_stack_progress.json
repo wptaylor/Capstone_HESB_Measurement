@@ -1,16 +1,16 @@
 {
-  "completed_positions": 2,
+  "completed_positions": 21,
   "dummy_data": false,
-  "last_capture_pc_local_time": "2026-04-24T16:42:25-04:00",
-  "last_snapshot_arduino_ms": 16525,
-  "last_z_index": 1,
-  "last_z_mm": 1.5,
-  "last_z_steps": 1000,
-  "last_z_um": 1500.0,
+  "last_capture_pc_local_time": "2026-04-24T22:38:45-04:00",
+  "last_snapshot_arduino_ms": 128339,
+  "last_z_index": 20,
+  "last_z_mm": 30.0,
+  "last_z_steps": 20000,
+  "last_z_um": 30000.0,
   "mapping_xlsx": "C:\\Users\\willt\\Documents\\Capstone\\Measurement Code\\SensorGrid_112_Positions (1).xlsx",
   "mlx_source": "COM11",
-  "output_csv": "C:\\Users\\willt\\Documents\\Capstone\\Measurement Code\\mlx_z_stack_20260424_164205.csv",
+  "output_csv": "C:\\Users\\willt\\Documents\\Capstone\\Measurement Code\\mlx_z_stack_20260424_223634.csv",
   "stage_port": "COM10",
   "state_file": "C:\\Users\\willt\\Documents\\Capstone\\Measurement Code\\z_stage_state.json",
-  "total_positions": 41
+  "total_positions": 21
 }
